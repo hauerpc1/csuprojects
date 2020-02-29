@@ -1,0 +1,94 @@
+#import
+
+%web_drop_table(WORK.IMPORT);
+
+
+FILENAME REFFILE '/folders/myfolders/mis540/mis581module6.xlsx';
+
+PROC IMPORT DATAFILE=REFFILE
+	DBMS=XLSX
+	OUT=WORK.IMPORT;
+	GETNAMES=YES;
+RUN;
+
+PROC CONTENTS DATA=WORK.IMPORT; RUN;
+
+
+%web_open_table(WORK.IMPORT);
+
+/********************************************************/
+#summarystatistics
+
+proc means data=WORK.IMPORT chartype mean std min max n vardef=df;
+	var est__blood_spend __of_Staffed_Beds;
+	class IDN_Name;
+run;
+
+/********************************************************/
+#scatterplot matric grouped by idn name
+options validvarname=any;
+ods noproctitle;
+ods graphics / imagemap=on;
+
+/* Scatter plot matrix macro */
+%macro scatterPlotMatrix(xVars=, title=, groupVar=);
+	proc sgscatter data=WORK.IMPORT;
+		matrix &xVars / %if(&groupVar ne %str()) %then
+			%do;
+				group=&groupVar legend=(sortorder=ascending) %end;
+		;
+		title &title;
+	run;
+
+	title;
+%mend scatterPlotMatrix;
+
+%scatterPlotMatrix(xVars=est_lab_spend __of_Staffed_Beds, 
+	title="Scatter plot matrix grouped by IDN_Name", groupVar=IDN_Name);
+
+
+++++++++++++++++++++++++++++++++++++++++++++
+/*correlation*/
+
+ods noproctitle;
+ods graphics / imagemap=on;
+
+proc corr data=WORK.IMPORT pearson nosimple noprob plots=scatter(ellipse=none);
+	var __of_Staffed_Beds;
+	with est_lab_spend;
+run;
+
+++++++++++++++++++++++++++++++++++++
+#linear regression
+ods noproctitle;
+ods graphics / imagemap=on;
+
+proc glmselect data=WORK.IMPORT outdesign(addinputvars)=Work.reg_design 
+		plots=(criterionpanel coefficientpanel);
+	model est_lab_spend=__of_Staffed_Beds __of_Discharges __of_Employees 
+		Total_Assets Net_Income Total_Operating_Expenses Total_Revenues 
+		__of_Hospitals Net_Patient_Revenue est__blood_spend / showpvalues 
+		selection=forward 
+    
+   (select=aic choose=sbc);
+run;
+
+proc reg data=Work.reg_design alpha=0.05 plots(only)=(diagnostics residuals 
+		observedbypredicted);
+	ods select DiagnosticsPanel ResidualPlot ObservedByPredicted;
+	model est_lab_spend=&_GLSMOD /;
+	run;
+quit;
+
+proc delete data=Work.reg_design;
+run;
+
++++++++++++++++++++++++++
+ods noproctitle;
+ods graphics / imagemap=on;
+
+proc reg data=WORK.IMPORT alpha=0.05 plots(only)=(diagnostics residuals fitplot 
+		observedbypredicted);
+	model est__blood_spend=__of_Staffed_Beds /;
+	run;
+quit;
